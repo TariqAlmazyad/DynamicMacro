@@ -1,8 +1,11 @@
+Thought for 5 seconds
+
+
 **DynamicMacros**
 
 ![Swift Version](https://img.shields.io/badge/Swift-5.8+-orange.svg) ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
-A Swift Package that provides dynamic macro annotations to automatically synthesize `Equatable`, `Hashable`, and other common protocol conformances for **structs**, **classes**, **enums**, and **Coordinator**-based architectures—including full support for SwiftUI `Binding<T>` properties and enum cases.
+A Swift Package that provides dynamic macro annotations to automatically synthesize `Equatable`, `Hashable`, `Identifiable`, and other common protocol conformances for **structs**, **classes**, **enums**, and **Coordinator**-based architectures—including full support for SwiftUI `Binding<T>` properties and enum cases.
 
 ---
 
@@ -12,14 +15,14 @@ A Swift Package that provides dynamic macro annotations to automatically synthes
 * **Multi-Type Support**: Works on `struct`, `class`, and `enum`
 * **Coordinator-Ready**: Seamlessly integrate with Coordinator architectures for navigation enums
 * **Binding Support**: Recognizes and handles `Binding<T>` in stored properties, enum payloads, and class fields
-* **Identifiable Support**: Automatically synthesizes `id` for `Identifiable` conformance in structs and classes
+* **Identifiable Support**: Automatically synthesizes an `id` property for `Identifiable` conformance in structs and classes
 * **Extensible**: Easily add support for more protocols in the future
 
 ---
 
 ## 📦 Installation
 
-Add DynamicMacros to your project using Swift Package Manager:
+Add **DynamicMacros** to your project using Swift Package Manager:
 
 ```swift
 // In Xcode: File ▶️ Add Packages... ▶️ https://github.com/talmazyad/DynamicMacros
@@ -30,7 +33,7 @@ dependencies: [
 ]
 ```
 
-Import in your code:
+Then import in your code:
 
 ```swift
 import DynamicMacros
@@ -50,12 +53,11 @@ struct User: Identifiable, Equatable, Hashable {
     let name: String
     let email: String
 
-    // Identifiable
-    // `id` property already defined
-
     // Equatable
     static func ==(lhs: User, rhs: User) -> Bool {
-        return lhs.id == rhs.id && lhs.name == rhs.name && lhs.email == rhs.email
+        return lhs.id == rhs.id
+            && lhs.name == rhs.name
+            && lhs.email == rhs.email
     }
 
     // Hashable
@@ -70,9 +72,9 @@ struct User: Identifiable, Equatable, Hashable {
 **After**:
 
 ```swift
-@DynamicIdentifiable
-@DynamicEquatable
-@DynamicHashable
+@Identifiable
+@Equatable
+@Hashable
 struct User {
     let id: UUID
     let name: String
@@ -110,8 +112,8 @@ class AuthViewModel: ObservableObject, Equatable, Hashable {
 **After**:
 
 ```swift
-@DynamicEquatable
-@DynamicHashable
+@Equatable
+@Hashable
 class AuthViewModel: ObservableObject {
     @Published var token: String
     let userId: UUID
@@ -126,8 +128,8 @@ class AuthViewModel: ObservableObject {
 #### Class with Binding: Theme Settings
 
 ```swift
-@DynamicEquatable
-@DynamicHashable
+@Equatable
+@Hashable
 class ThemeSettingsViewModel: ObservableObject {
     @Published var isDarkMode: Bool
     var toggleMode: Binding<Bool>
@@ -150,12 +152,12 @@ import SwiftUI
 
 enum AppScreen: Equatable, Hashable {
     case dashboard
-    case userProfile(username: String)          // String
-    case messages(count: Int)                   // Int
+    case userProfile(username: String)
+    case messages(count: Int)
     case settings
-    case courseDetail(courseId: Int)            // Int
-    case auth(viewModel: AuthViewModel)         // class
-    case themeMode(binding: Binding<Bool>)      // Binding<Bool>
+    case courseDetail(courseId: Int)
+    case auth(viewModel: AuthViewModel)
+    case themeMode(binding: Binding<Bool>)
 
     var title: String {
         switch self {
@@ -214,8 +216,8 @@ enum AppScreen: Equatable, Hashable {
 **After**:
 
 ```swift
-@DynamicEquatable
-@DynamicHashable
+@Equatable
+@Hashable
 enum AppScreen {
     case dashboard
     case userProfile(username: String)
@@ -260,10 +262,8 @@ struct SearchViewModel: Equatable, Hashable {
 **After**:
 
 ```swift
-struct APIResponse<T> { let data: T }
-
-@DynamicEquatable
-@DynamicHashable
+@Equatable
+@Hashable
 struct SearchViewModel {
     let response: APIResponse<Article>
     var query: Binding<String>
@@ -287,13 +287,13 @@ struct Profile: Identifiable {
 **After**:
 
 ```swift
-@DynamicIdentifiable
+@Identifiable
 struct Profile {
     let name: String
 }
 ```
 
-*Dynamically provides an `id: UUID` property under the hood.*
+*Dynamically provides an `id: UUID` under the hood.*
 
 ---
 
@@ -320,5 +320,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ---
 
 > Made with ❤️ by [@talmazyad](https://github.com/talmazyad)
-# DynamicMacro
-# DynamicMacro
