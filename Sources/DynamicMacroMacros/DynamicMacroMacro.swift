@@ -2,39 +2,71 @@ import SwiftSyntax
 import SwiftSyntaxMacros
 import SwiftSyntaxBuilder
 import SwiftCompilerPlugin
-// Sources/DynamicMacrosMacros/DynamicMacrosMacro.swift
 
+/// A generic error type for macro expansion failures.
+///
+/// Conforms to `Error` and `CustomStringConvertible` to provide
+/// descriptive messages when macro expansion cannot proceed.
 enum MacroError: Error, CustomStringConvertible {
+    /// An error with an associated explanatory message.
     case message(String)
-    var description: String {
+
+    /// A textual description of the error.
+    public var description: String {
         switch self {
-        case .message(let text): return text
+        case .message(let text):
+            return text
         }
     }
 }
 
 @available(macOS 13.0, *)
+/// The entry point for the DynamicMacro compiler plugin.
+///
+/// Registers all macros provided by this package with the Swift compiler,
+/// making `@Hashable`, `@Equatable`, and `@Identifiable` available in
+/// client targets.
 @main
 struct DynamicMacroPlugin: CompilerPlugin {
-    let providingMacros: [Macro.Type] = [
+    /// The collection of macros exposed by this plugin.
+    public let providingMacros: [Macro.Type] = [
         HashableMacro.self,
         EquatableMacro.self,
         IdentifiableMacro.self,
     ]
 }
 
-/// ——————————————————————
-/// 1) Hashable: adds `: Hashable` via an extension
-///    Works on structs, classes, and enums.
-/// ——————————————————————
-public struct HashableMacro: MemberMacro {
+// MARK: ——————————————————————
+// 1) Hashable: adds `: Hashable` via an extension
+//    Works on structs, classes, and enums.
+// ——————————————————————
+
+/// A macro that synthesizes `Hashable` conformance.
+///
+/// - MemberMacro: Generates the `hash(into:)` implementation.
+/// - ExtensionMacro: Adds the `: Hashable` conformance via an extension.
+///
+/// **Supported Declarations:**
+///   - `struct`
+///   - `class`
+///   - `enum`
+public struct HashableMacro: MemberMacro, ExtensionMacro {
+    /// Generates the `hash(into:)` method for a struct, class, or enum.
+    ///
+    /// - Parameters:
+    ///   - node: The syntax node representing the `@Hashable` attribute.
+    ///   - declaration: The declaration (`StructDeclSyntax`, `ClassDeclSyntax`, or `EnumDeclSyntax`) to which the macro is applied.
+    ///   - protocols: The list of existing protocol conformances (unused).
+    ///   - context: The macro expansion context (unused).
+    ///
+    /// - Returns: An array containing the `DeclSyntax` for the synthesized `hash(into:)` method.
+    /// - Throws: `MacroError.message` if the macro is applied to an unsupported declaration type.
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        
         switch declaration {
         case let structDecl as StructDeclSyntax:
             let properties = structDecl.memberBlock.members
@@ -42,43 +74,43 @@ public struct HashableMacro: MemberMacro {
                 .filter { $0.bindingSpecifier.text == "let" || $0.bindingSpecifier.text == "var" }
                 .flatMap { $0.bindings }
                 .map { $0.pattern.trimmedDescription }
-            
+
             let hashBody = properties.map { "hasher.combine(\($0))" }.joined(separator: "\n    ")
-            
+
             return ["""
             @available(macOS 13.0, *)
             public func hash(into hasher: inout Hasher) {
                 \(raw: hashBody)
             }
             """]
-            
+
         case let classDecl as ClassDeclSyntax:
             let properties = classDecl.memberBlock.members
                 .compactMap { $0.decl.as(VariableDeclSyntax.self) }
                 .filter { $0.bindingSpecifier.text == "let" || $0.bindingSpecifier.text == "var" }
                 .flatMap { $0.bindings }
                 .map { $0.pattern.trimmedDescription }
-            
+
             let hashBody = properties.map { "hasher.combine(\($0))" }.joined(separator: "\n    ")
-            
+
             return ["""
             @available(macOS 13.0, *)
             public func hash(into hasher: inout Hasher) {
                 \(raw: hashBody)
             }
             """]
-            
+
         case let enumDecl as EnumDeclSyntax:
             let cases = enumDecl.memberBlock.members
                 .compactMap { $0.decl.as(EnumCaseDeclSyntax.self) }
                 .flatMap { $0.elements }
-            
+
             let hashStatements = cases.enumerated().map { index, element in
                 if let parameters = element.parameterClause?.parameters {
                     let paramsHash = parameters.enumerated().map { paramIndex, param in
                         let paramName = param.firstName?.text ?? "value\(paramIndex)"
                         let type = param.type.trimmedDescription
-                        
+
                         if type.hasPrefix("Binding<") {
                             return "hasher.combine(\(paramName).wrappedValue)"
                         } else if isClassType(type) {
@@ -87,11 +119,11 @@ public struct HashableMacro: MemberMacro {
                             return "hasher.combine(\(paramName))"
                         }
                     }.joined(separator: "\n        ")
-                    
+
                     let paramNames = parameters.enumerated().map { index, param in
                         param.firstName?.text ?? "value\(index)"
                     }
-                    
+
                     return """
                     case .\(element.name)(\(paramNames.map { "let \($0)" }.joined(separator: ", "))):
                         hasher.combine(\(index))
@@ -104,7 +136,7 @@ public struct HashableMacro: MemberMacro {
                     """
                 }
             }.joined(separator: "\n        ")
-            
+
             return ["""
             @available(macOS 13.0, *)
             public func hash(into hasher: inout Hasher) {
@@ -113,20 +145,31 @@ public struct HashableMacro: MemberMacro {
                 }
             }
             """]
-            
+
         default:
             throw MacroError.message("@DynamicHashable can only be applied to structs, classes, or enums")
         }
     }
-    
+
+    /// A simple heuristic to detect class types by name.
+    ///
+    /// - Parameter type: The textual representation of a type.
+    /// - Returns: `true` if the type is likely a class (starts uppercase and not a known value type).
     private static func isClassType(_ type: String) -> Bool {
-        // Simple heuristic: if it starts with uppercase and isn't a known value type
         let knownValueTypes = ["Int", "String", "Bool", "Double", "Float", "Binding"]
         return type.first?.isUppercase == true && !knownValueTypes.contains(where: type.hasPrefix)
     }
-}
 
-extension HashableMacro: ExtensionMacro {
+    /// Adds the `: Hashable` conformance via an extension.
+    ///
+    /// - Parameters:
+    ///   - node: The `@Hashable` attribute syntax node.
+    ///   - declaration: The declaration to which the macro is applied.
+    ///   - type: The type being extended.
+    ///   - protocols: Existing protocol conformances (unused).
+    ///   - context: The macro expansion context (unused).
+    ///
+    /// - Returns: An `ExtensionDeclSyntax` for `extension YourType: Hashable {}`.
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
@@ -147,18 +190,25 @@ extension HashableMacro: ExtensionMacro {
 /// 2) Equatable: injects `static func ==(...)` + `: Equatable`
 ///    Works on structs, classes, and enums.
 /// ——————————————————————
-///
-///
 
 @available(macOS 13.0, *)
 public struct EquatableMacro: MemberMacro {
+    /// Generates the `==` operator for the annotated declaration.
+    ///
+    /// - Parameters:
+    ///   - node: The `@Equatable` attribute syntax node.
+    ///   - declaration: The declaration (`StructDeclSyntax`, `ClassDeclSyntax`, or `EnumDeclSyntax`) to which the macro is applied.
+    ///   - protocols: Existing protocol conformances (unused).
+    ///   - context: The macro expansion context (unused).
+    ///
+    /// - Returns: An array containing the `DeclSyntax` for the synthesized `==` implementation.
+    /// - Throws: `MacroError.message` if applied to an unsupported declaration type.
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        
         switch declaration {
         case let structDecl as StructDeclSyntax:
             return try makeEquatable(for: structDecl.name.text,
@@ -175,7 +225,7 @@ public struct EquatableMacro: MemberMacro {
             let elements = enumDecl.memberBlock.members
                 .compactMap { $0.decl.as(EnumCaseDeclSyntax.self) }
                 .flatMap { $0.elements }
-            
+
             let caseBodies = elements.map { element -> String in
                 let caseName = element.name.text
                 
@@ -227,19 +277,29 @@ public struct EquatableMacro: MemberMacro {
             )
         }
     }
-    
+
+    /// Helper to synthesize `==` for structs and classes based on stored properties.
+    ///
+    /// - Parameters:
+    ///   - typeName: The name of the type being compared.
+    ///   - members: The member declarations of the type.
+    ///   - isClass: A Boolean indicating whether the type is a class (adds runtime type check).
+    ///
+    /// - Returns: An array containing the `DeclSyntax` for the complete `==` function.
+    /// - Throws: Propagates errors from macro expansion or syntax building.
     private static func makeEquatable(
         for typeName: String,
         members: MemberBlockItemListSyntax,
         isClass: Bool
     ) throws -> [DeclSyntax] {
+        // Implementation remains unchanged
         let storedProperties = members
             .compactMap { $0.decl.as(VariableDeclSyntax.self) }
             .filter { $0.bindingSpecifier.text == "let" || $0.bindingSpecifier.text == "var" }
             .flatMap { $0.bindings }
-            .filter { $0.accessorBlock == nil } // Ignore computed properties
+            .filter { $0.accessorBlock == nil }
             .map { $0.pattern.trimmedDescription }
-        
+
         guard !storedProperties.isEmpty else {
             return ["""
             public static func ==(lhs: \(raw: typeName), rhs: \(raw: typeName)) -> Bool {
@@ -247,7 +307,7 @@ public struct EquatableMacro: MemberMacro {
             }
             """]
         }
-        
+
         let comparisons = storedProperties.map { property -> String in
             if isClass {
                 return """
@@ -262,7 +322,7 @@ public struct EquatableMacro: MemberMacro {
                 return "guard lhs.\(property) == rhs.\(property) else { return false }"
             }
         }.joined(separator: "\n")
-        
+
         return ["""
         public static func ==(lhs: \(raw: typeName), rhs: \(raw: typeName)) -> Bool {
             \(raw: comparisons)
@@ -273,13 +333,23 @@ public struct EquatableMacro: MemberMacro {
 }
 
 
-
-
 /// ——————————————————————
 /// 3) Identifiable: adds `: Identifiable` via an extension
 ///    Works on structs, classes, and enums.
 /// ——————————————————————
+
 public struct IdentifiableMacro: ExtensionMacro {
+    /// Generates the extension to add `Identifiable` conformance.
+    ///
+    /// - Parameters:
+    ///   - node: The `@Identifiable` attribute syntax node.
+    ///   - declaration: The declaration to which the macro is applied.
+    ///   - type: The name of the type being extended.
+    ///   - protocols: Existing protocol conformances (unused).
+    ///   - context: The macro expansion context (unused).
+    ///
+    /// - Returns: An `ExtensionDeclSyntax` for `extension YourType: Identifiable {}`.
+    /// - Throws: `MacroError.message` if applied to an unsupported declaration type.
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
