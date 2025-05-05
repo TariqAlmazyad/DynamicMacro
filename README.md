@@ -20,6 +20,8 @@ A Swift Package that provides dynamic macro annotations to automatically synthes
 
 ---
 
+https://github.com/user-attachments/assets/3d01065b-14ff-4ffc-a291-13788ad32042
+
 ## 📦 Installation
 
 Add **DynamicMacros** to your project using Swift Package Manager:
