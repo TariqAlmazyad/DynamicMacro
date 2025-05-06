@@ -282,19 +282,10 @@ public struct EquatableMacro: MemberMacro {
 /// 3) Identifiable: adds `: Identifiable` via an extension
 ///    Works on structs, classes, and enums.
 /// ——————————————————————
+/// A macro that adds `Identifiable` conformance and optionally injects an `id` property.
+/// A macro that adds `Identifiable` conformance and injects an optional `id` property if none exists.
 
-public struct IdentifiableMacro: ExtensionMacro {
-    /// Generates the extension to add `Identifiable` conformance.
-    ///
-    /// - Parameters:
-    ///   - node: The `@Identifiable` attribute syntax node.
-    ///   - declaration: The declaration to which the macro is applied.
-    ///   - type: The name of the type being extended.
-    ///   - protocols: Existing protocol conformances (unused).
-    ///   - context: The macro expansion context (unused).
-    ///
-    /// - Returns: An `ExtensionDeclSyntax` for `extension YourType: Identifiable {}`.
-    /// - Throws: `MacroError.message` if applied to an unsupported declaration type.
+public struct IdentifiableMacro: ExtensionMacro, MemberMacro {
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
@@ -302,12 +293,98 @@ public struct IdentifiableMacro: ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        guard declaration.is(StructDeclSyntax.self)
-            || declaration.is(ClassDeclSyntax.self)
-            || declaration.is(EnumDeclSyntax.self)
-        else {
+        guard declaration.is(StructDeclSyntax.self) ||
+              declaration.is(ClassDeclSyntax.self) ||
+              declaration.is(EnumDeclSyntax.self) else {
             throw MacroError.message("@Identifiable can only be applied to structs, classes, or enums")
         }
-        return [ try ExtensionDeclSyntax("extension \(type.trimmed): Identifiable {}") ]
+        
+        return [try ExtensionDeclSyntax("extension \(type.trimmed): Identifiable {}")]
+    }
+
+    public static func expansion(
+        of node: AttributeSyntax,
+        providingMembersOf declaration: some DeclGroupSyntax,
+        conformingTo protocols: [TypeSyntax],
+        in context: some MacroExpansionContext
+    ) throws -> [DeclSyntax] {
+        guard !hasExistingIDProperty(in: declaration) else {
+            return []
+        }
+        
+        let idType = try parseIDType(from: node)
+        return [generateIDProperty(for: declaration, idType: idType)]
+    }
+    
+    private static func hasExistingIDProperty(in declaration: some DeclGroupSyntax) -> Bool {
+        declaration.memberBlock.members.contains { member in
+            member.decl.as(VariableDeclSyntax.self)?.bindings.contains {
+                $0.pattern.trimmedDescription == "id"
+            } ?? false
+        }
+    }
+    
+    private static func parseIDType(from node: AttributeSyntax) throws -> String {
+        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self),
+              let firstArg = arguments.first else {
+            return "String"
+        }
+        
+        guard let typeExpr = firstArg.expression.as(MemberAccessExprSyntax.self),
+              typeExpr.declName.baseName.text == "self",
+              let base = typeExpr.base?.as(DeclReferenceExprSyntax.self) else {
+            throw MacroError.message("Use format @Identifiable(idType: Type.self)")
+        }
+        
+        return base.baseName.text
+    }
+    
+    private static func generateIDProperty(
+        for declaration: some DeclGroupSyntax,
+        idType: String
+    ) -> DeclSyntax {
+        let isClass = declaration.is(ClassDeclSyntax.self)
+        let isSimpleEnum = declaration.is(EnumDeclSyntax.self) &&
+        !((declaration as? EnumDeclSyntax)?.hasAssociatedValues ?? false)
+        
+        if isSimpleEnum {
+            return "public var id: Self { self }"
+        }
+        
+        let (typeName, value) = idPropertyDetails(for: idType, isClass: isClass)
+        let decl: String
+        
+        if isClass {
+            decl = "public let id: \(typeName) = \(value)"
+        } else {
+            decl = "public var id: \(typeName) { \(value) }"
+        }
+        
+        return DeclSyntax(stringLiteral: decl)
+    }
+    
+    private static func idPropertyDetails(for typeName: String, isClass: Bool) -> (String, String) {
+        switch typeName {
+        case "String": return ("String", "UUID().uuidString")
+        case "Int": return ("Int", "Int.random(in: 1..<Int.max)")
+        case "Double": return ("Double", "Double.random(in: 0..<1)")
+        case "Bool": return ("Bool", "Bool.random()")
+        case "UUID": return ("UUID", "UUID()")
+        default:
+            let defaultValue = isClass ?
+                "fatalError(\"Implement \(typeName) ID generation\")" :
+                "{ fatalError(\"Implement \(typeName) ID generation\") }"
+            return (typeName, defaultValue)
+        }
+    }
+}
+
+extension EnumDeclSyntax {
+    var hasAssociatedValues: Bool {
+        memberBlock.members.contains { member in
+            member.decl.as(EnumCaseDeclSyntax.self)?.elements.contains {
+                $0.parameterClause != nil
+            } ?? false
+        }
     }
 }
