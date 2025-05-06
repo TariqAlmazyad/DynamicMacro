@@ -51,16 +51,6 @@ struct DynamicMacroPlugin: CompilerPlugin {
 ///   - `class`
 ///   - `enum`
 public struct HashableMacro: MemberMacro, ExtensionMacro {
-    /// Generates the `hash(into:)` method for a struct, class, or enum.
-    ///
-    /// - Parameters:
-    ///   - node: The syntax node representing the `@Hashable` attribute.
-    ///   - declaration: The declaration (`StructDeclSyntax`, `ClassDeclSyntax`, or `EnumDeclSyntax`) to which the macro is applied.
-    ///   - protocols: The list of existing protocol conformances (unused).
-    ///   - context: The macro expansion context (unused).
-    ///
-    /// - Returns: An array containing the `DeclSyntax` for the synthesized `hash(into:)` method.
-    /// - Throws: `MacroError.message` if the macro is applied to an unsupported declaration type.
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -78,7 +68,6 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
             let hashBody = properties.map { "hasher.combine(\($0))" }.joined(separator: "\n    ")
 
             return ["""
-            @available(macOS 13.0, *)
             public func hash(into hasher: inout Hasher) {
                 \(raw: hashBody)
             }
@@ -94,9 +83,9 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
             let hashBody = properties.map { "hasher.combine(\($0))" }.joined(separator: "\n    ")
 
             return ["""
-            @available(macOS 13.0, *)
             public func hash(into hasher: inout Hasher) {
                 \(raw: hashBody)
+                hasher.combine(ObjectIdentifier(self))
             }
             """]
 
@@ -113,12 +102,13 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
 
                         if type.hasPrefix("Binding<") {
                             return "hasher.combine(\(paramName).wrappedValue)"
-                        } else if isClassType(type) {
-                            return "hasher.combine(ObjectIdentifier(\(paramName)))"
+                        } else if type.contains("->") {
+                            return "// Cannot hash function type"
                         } else {
+                            // For all other types including nested enums, just combine directly
                             return "hasher.combine(\(paramName))"
                         }
-                    }.joined(separator: "\n        ")
+                    }.filter { !$0.starts(with: "//") }.joined(separator: "\n        ")
 
                     let paramNames = parameters.enumerated().map { index, param in
                         param.firstName?.text ?? "value\(index)"
@@ -138,7 +128,6 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
             }.joined(separator: "\n        ")
 
             return ["""
-            @available(macOS 13.0, *)
             public func hash(into hasher: inout Hasher) {
                 switch self {
                 \(raw: hashStatements)
@@ -147,29 +136,10 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
             """]
 
         default:
-            throw MacroError.message("@DynamicHashable can only be applied to structs, classes, or enums")
+            throw MacroError.message("@Hashable can only be applied to structs, classes, or enums")
         }
     }
 
-    /// A simple heuristic to detect class types by name.
-    ///
-    /// - Parameter type: The textual representation of a type.
-    /// - Returns: `true` if the type is likely a class (starts uppercase and not a known value type).
-    private static func isClassType(_ type: String) -> Bool {
-        let knownValueTypes = ["Int", "String", "Bool", "Double", "Float", "Binding"]
-        return type.first?.isUppercase == true && !knownValueTypes.contains(where: type.hasPrefix)
-    }
-
-    /// Adds the `: Hashable` conformance via an extension.
-    ///
-    /// - Parameters:
-    ///   - node: The `@Hashable` attribute syntax node.
-    ///   - declaration: The declaration to which the macro is applied.
-    ///   - type: The type being extended.
-    ///   - protocols: Existing protocol conformances (unused).
-    ///   - context: The macro expansion context (unused).
-    ///
-    /// - Returns: An `ExtensionDeclSyntax` for `extension YourType: Hashable {}`.
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
@@ -178,7 +148,6 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
         let extensionDecl: ExtensionDeclSyntax = try ExtensionDeclSyntax("""
-        @available(macOS 13.0, *)
         extension \(type.trimmed): Hashable {}
         """)
         return [extensionDecl]
@@ -193,16 +162,6 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
 
 @available(macOS 13.0, *)
 public struct EquatableMacro: MemberMacro {
-    /// Generates the `==` operator for the annotated declaration.
-    ///
-    /// - Parameters:
-    ///   - node: The `@Equatable` attribute syntax node.
-    ///   - declaration: The declaration (`StructDeclSyntax`, `ClassDeclSyntax`, or `EnumDeclSyntax`) to which the macro is applied.
-    ///   - protocols: Existing protocol conformances (unused).
-    ///   - context: The macro expansion context (unused).
-    ///
-    /// - Returns: An array containing the `DeclSyntax` for the synthesized `==` implementation.
-    /// - Throws: `MacroError.message` if applied to an unsupported declaration type.
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -244,10 +203,9 @@ public struct EquatableMacro: MemberMacro {
                         if type.hasPrefix("Binding<") {
                             return "lhs\(name).wrappedValue == rhs\(name).wrappedValue"
                         } else if type.contains("->") {
-                            return "false"
-                        } else if type.first?.isUppercase == true && !type.hasPrefix("Binding") {
-                            return "(lhs\(name) as AnyObject) === (rhs\(name) as AnyObject)"
+                            return "false" // Functions can't be compared
                         } else {
+                            // For all other types including nested enums, just use ==
                             return "lhs\(name) == rhs\(name)"
                         }
                     }.joined(separator: " && ")
@@ -272,27 +230,15 @@ public struct EquatableMacro: MemberMacro {
             """]
             
         default:
-            throw MacroError.message(
-                "@DynamicEquatable can only be applied to structs, classes, or enums"
-            )
+            throw MacroError.message("@Equatable can only be applied to structs, classes, or enums")
         }
     }
 
-    /// Helper to synthesize `==` for structs and classes based on stored properties.
-    ///
-    /// - Parameters:
-    ///   - typeName: The name of the type being compared.
-    ///   - members: The member declarations of the type.
-    ///   - isClass: A Boolean indicating whether the type is a class (adds runtime type check).
-    ///
-    /// - Returns: An array containing the `DeclSyntax` for the complete `==` function.
-    /// - Throws: Propagates errors from macro expansion or syntax building.
     private static func makeEquatable(
         for typeName: String,
         members: MemberBlockItemListSyntax,
         isClass: Bool
     ) throws -> [DeclSyntax] {
-        // Implementation remains unchanged
         let storedProperties = members
             .compactMap { $0.decl.as(VariableDeclSyntax.self) }
             .filter { $0.bindingSpecifier.text == "let" || $0.bindingSpecifier.text == "var" }
@@ -311,9 +257,6 @@ public struct EquatableMacro: MemberMacro {
         let comparisons = storedProperties.map { property -> String in
             if isClass {
                 return """
-                if type(of: lhs.\(property)) != type(of: rhs.\(property)) {
-                    return false
-                }
                 guard lhs.\(property) == rhs.\(property) else {
                     return false
                 }
@@ -323,9 +266,11 @@ public struct EquatableMacro: MemberMacro {
             }
         }.joined(separator: "\n")
 
+        let typeCheck = isClass ? "guard type(of: lhs) == type(of: rhs) else { return false }\n" : ""
+        
         return ["""
         public static func ==(lhs: \(raw: typeName), rhs: \(raw: typeName)) -> Bool {
-            \(raw: comparisons)
+            \(raw: typeCheck)\(raw: comparisons)
             return true
         }
         """]
