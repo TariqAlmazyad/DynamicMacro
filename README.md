@@ -42,8 +42,7 @@ import DynamicMacros
 
 ### Enum: App Screens Navigation
 
-<details>
-<summary><strong>Before</strong></summary>
+**Before:**
 
 ```swift
 enum AppScreen: Equatable, Hashable {
@@ -109,10 +108,7 @@ enum AppScreen: Equatable, Hashable {
 }
 ```
 
-</details>
-
-<details>
-<summary><strong>After</strong></summary>
+**After:**
 
 ```swift
 @Equatable
@@ -140,14 +136,11 @@ enum AppScreen {
 }
 ```
 
-</details>
-
 ---
 
 ### Struct: User Model with All Macros
 
-<details>
-<summary><strong>Before</strong></summary>
+**Before:**
 
 ```swift
 struct User: Identifiable, Equatable, Hashable {
@@ -171,10 +164,7 @@ struct User: Identifiable, Equatable, Hashable {
 }
 ```
 
-</details>
-
-<details>
-<summary><strong>After</strong></summary>
+**After:**
 
 ```swift
 @Identifiable
@@ -187,14 +177,11 @@ struct User {
 }
 ```
 
-</details>
-
 ---
 
 ### Class: Authentication ViewModel
 
-<details>
-<summary><strong>Before</strong></summary>
+**Before:**
 
 ```swift
 class AuthViewModel: ObservableObject, Equatable, Hashable {
@@ -217,10 +204,7 @@ class AuthViewModel: ObservableObject, Equatable, Hashable {
 }
 ```
 
-</details>
-
-<details>
-<summary><strong>After</strong></summary>
+**After:**
 
 ```swift
 @Equatable
@@ -236,8 +220,6 @@ class AuthViewModel: ObservableObject {
 }
 ```
 
-</details>
-
 ---
 
 ### 🔖 `@Identifiable` Usage
@@ -246,18 +228,33 @@ Automatically inject an `id` property of any supported type—no boilerplate req
 
 #### 1. Default `UUID` id
 
+<details>
+<summary>We generate a default `id` property for you</summary>
+
 ```swift
 @Identifiable
 struct Task {
     var title: String
     var isDone: Bool
 }
-
-// → provides:
-// var id: UUID { UUID() }
 ```
 
-#### 2. Custom `String` id
+</details>
+
+<details>
+<summary>See the generated expansion</summary>
+
+```swift
+extension Task: Identifiable {
+    var id: UUID { UUID() }
+}
+```
+
+</details>
+
+#### 2. Using `idType` parameter Using `idType` parameter
+
+* **String id**
 
 ```swift
 @Identifiable(idType: String.self)
@@ -268,7 +265,7 @@ struct Task {
 }
 ```
 
-#### 3. Other built-in id types
+* **Bool id**
 
 ```swift
 @Identifiable(idType: Bool.self)
@@ -277,7 +274,11 @@ struct FeatureToggle {
     var isEnabled: Bool
     var id: Bool = true
 }
+```
 
+* **Int id**
+
+```swift
 @Identifiable(idType: Int.self)
 struct UserProfile {
     var username: String
@@ -286,7 +287,7 @@ struct UserProfile {
 }
 ```
 
-#### 4. Custom id type
+* **Custom id type**
 
 ```swift
 struct CustomID: RawRepresentable, Hashable {
