@@ -1,6 +1,3 @@
-Thought for 5 seconds
-
-
 **DynamicMacros**
 
 ![Swift Version](https://img.shields.io/badge/Swift-5.8+-orange.svg) ![License](https://img.shields.io/badge/License-MIT-blue.svg)
