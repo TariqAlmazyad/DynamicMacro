@@ -71,7 +71,7 @@ public macro Equatable() = #externalMacro(
 /// - Note: Requires Swift 5.9+ and the Swift compiler plugin.
 @attached(extension, conformances: Identifiable)
 @attached(member, names: named(id))
-public macro Identifiable(idType: Any.Type = String.self) = #externalMacro(
+public macro Identifiable(idType: Any.Type = String.self, optional: Bool = false) = #externalMacro(
     module: "DynamicMacroMacros",
     type: "IdentifiableMacro"
 )

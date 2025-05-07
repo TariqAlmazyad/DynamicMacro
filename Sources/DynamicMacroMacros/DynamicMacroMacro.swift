@@ -284,7 +284,6 @@ public struct EquatableMacro: MemberMacro {
 /// ——————————————————————
 /// A macro that adds `Identifiable` conformance and optionally injects an `id` property.
 /// A macro that adds `Identifiable` conformance and injects an optional `id` property if none exists.
-
 public struct IdentifiableMacro: ExtensionMacro, MemberMacro {
     public static func expansion(
         of node: AttributeSyntax,
@@ -312,8 +311,8 @@ public struct IdentifiableMacro: ExtensionMacro, MemberMacro {
             return []
         }
         
-        let idType = try parseIDType(from: node)
-        return [generateIDProperty(for: declaration, idType: idType)]
+        let (idType, isOptional) = try parseArguments(from: node)
+        return [generateIDProperty(for: declaration, idType: idType, isOptional: isOptional)]
     }
     
     private static func hasExistingIDProperty(in declaration: some DeclGroupSyntax) -> Bool {
@@ -324,24 +323,33 @@ public struct IdentifiableMacro: ExtensionMacro, MemberMacro {
         }
     }
     
-    private static func parseIDType(from node: AttributeSyntax) throws -> String {
-        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self),
-              let firstArg = arguments.first else {
-            return "String"
+    private static func parseArguments(from node: AttributeSyntax) throws -> (String, Bool) {
+        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self) else {
+            return ("String", false)
         }
         
-        guard let typeExpr = firstArg.expression.as(MemberAccessExprSyntax.self),
-              typeExpr.declName.baseName.text == "self",
-              let base = typeExpr.base?.as(DeclReferenceExprSyntax.self) else {
-            throw MacroError.message("Use format @Identifiable(idType: Type.self)")
+        var idType = "String"
+        var isOptional = false
+        
+        for argument in arguments {
+            if argument.label?.text == "idType",
+               let typeExpr = argument.expression.as(MemberAccessExprSyntax.self),
+               typeExpr.declName.baseName.text == "self",
+               let base = typeExpr.base?.as(DeclReferenceExprSyntax.self) {
+                idType = base.baseName.text
+            } else if argument.label?.text == "optional",
+                      let boolValue = argument.expression.as(BooleanLiteralExprSyntax.self) {
+                isOptional = boolValue.literal.text == "true"
+            }
         }
         
-        return base.baseName.text
+        return (idType, isOptional)
     }
     
     private static func generateIDProperty(
         for declaration: some DeclGroupSyntax,
-        idType: String
+        idType: String,
+        isOptional: Bool
     ) -> DeclSyntax {
         let isClass = declaration.is(ClassDeclSyntax.self)
         let isSimpleEnum = declaration.is(EnumDeclSyntax.self) &&
@@ -351,7 +359,7 @@ public struct IdentifiableMacro: ExtensionMacro, MemberMacro {
             return "public var id: Self { self }"
         }
         
-        let (typeName, value) = idPropertyDetails(for: idType, isClass: isClass)
+        let (typeName, value) = idPropertyDetails(for: idType, isClass: isClass, isOptional: isOptional)
         let decl: String
         
         if isClass {
@@ -363,18 +371,30 @@ public struct IdentifiableMacro: ExtensionMacro, MemberMacro {
         return DeclSyntax(stringLiteral: decl)
     }
     
-    private static func idPropertyDetails(for typeName: String, isClass: Bool) -> (String, String) {
+    private static func idPropertyDetails(for typeName: String, isClass: Bool, isOptional: Bool) -> (String, String) {
+        let optionalSuffix = isOptional ? "?" : ""
+        
         switch typeName {
-        case "String": return ("String", "UUID().uuidString")
-        case "Int": return ("Int", "Int.random(in: 1..<Int.max)")
-        case "Double": return ("Double", "Double.random(in: 0..<1)")
-        case "Bool": return ("Bool", "Bool.random()")
-        case "UUID": return ("UUID", "UUID()")
+        case "String":
+            let value = isOptional ? "nil" : "UUID().uuidString"
+            return ("String\(optionalSuffix)", value)
+        case "Int":
+            let value = isOptional ? "nil" : "Int.random(in: 1..<Int.max)"
+            return ("Int\(optionalSuffix)", value)
+        case "Double":
+            let value = isOptional ? "nil" : "Double.random(in: 0..<1)"
+            return ("Double\(optionalSuffix)", value)
+        case "Bool":
+            let value = isOptional ? "nil" : "Bool.random()"
+            return ("Bool\(optionalSuffix)", value)
+        case "UUID":
+            let value = isOptional ? "nil" : "UUID()"
+            return ("UUID\(optionalSuffix)", value)
         default:
             let defaultValue = isClass ?
-                "fatalError(\"Implement \(typeName) ID generation\")" :
-                "{ fatalError(\"Implement \(typeName) ID generation\") }"
-            return (typeName, defaultValue)
+                (isOptional ? "nil" : "fatalError(\"Implement \(typeName) ID generation\")") :
+                (isOptional ? "{ nil }" : "{ fatalError(\"Implement \(typeName) ID generation\") }")
+            return ("\(typeName)\(optionalSuffix)", defaultValue)
         }
     }
 }
