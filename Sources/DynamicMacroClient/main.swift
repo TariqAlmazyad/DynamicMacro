@@ -7,11 +7,10 @@ import SwiftUI
 /// Conforms to Identifiable, Equatable & Hashable automatically.
 @Equatable
 @Hashable
-@Identifiable
+@Identifiable(idType: String.self, optional: true)
 struct Task {
     var title: String
     var isDone: Bool
-    var id: String = UUID().uuidString
 }
 
 func demoStruct() {
@@ -19,7 +18,7 @@ func demoStruct() {
     let t2 = Task(title: "Write docs", isDone: false)
     print(t1 == t2)               // true, thanks to @Equatable
     print(Set([t1, t2]).count)    // 1, thanks to @Hashable
-    print(t1.id)                  // UUID, synthesized by @Identifiable
+    print(t1)                  // UUID, synthesized by @Identifiable
 }
 
 
