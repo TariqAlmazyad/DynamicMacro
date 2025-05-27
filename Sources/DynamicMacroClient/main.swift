@@ -53,7 +53,7 @@ func demoClass() {
 @Equatable
 @Hashable
 enum NavigationPage {
-    case home
+    case home // some comments
     case profile(userID: String)
     case settings
     case details(itemID: Int, title: String)

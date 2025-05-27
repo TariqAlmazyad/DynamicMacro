@@ -95,9 +95,11 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
                 .flatMap { $0.elements }
 
             let hashStatements = cases.enumerated().map { index, element in
+                let caseName = element.name.trimmed.text  // Use trimmed to ignore comments
+                
                 if let parameters = element.parameterClause?.parameters {
                     let paramsHash = parameters.enumerated().map { paramIndex, param in
-                        let paramName = param.firstName?.text ?? "value\(paramIndex)"
+                        let paramName = param.firstName?.trimmed.text ?? "value\(paramIndex)"
                         let type = param.type.trimmedDescription
 
                         if type.hasPrefix("Binding<") {
@@ -105,23 +107,22 @@ public struct HashableMacro: MemberMacro, ExtensionMacro {
                         } else if type.contains("->") {
                             return "// Cannot hash function type"
                         } else {
-                            // For all other types including nested enums, just combine directly
                             return "hasher.combine(\(paramName))"
                         }
                     }.filter { !$0.starts(with: "//") }.joined(separator: "\n        ")
 
                     let paramNames = parameters.enumerated().map { index, param in
-                        param.firstName?.text ?? "value\(index)"
+                        param.firstName?.trimmed.text ?? "value\(index)"
                     }
 
                     return """
-                    case .\(element.name)(\(paramNames.map { "let \($0)" }.joined(separator: ", "))):
+                    case .\(caseName)(\(paramNames.map { "let \($0)" }.joined(separator: ", "))):
                         hasher.combine(\(index))
                         \(paramsHash)
                     """
                 } else {
                     return """
-                    case .\(element.name):
+                    case .\(caseName):
                         hasher.combine(\(index))
                     """
                 }
@@ -186,11 +187,11 @@ public struct EquatableMacro: MemberMacro {
                 .flatMap { $0.elements }
 
             let caseBodies = elements.map { element -> String in
-                let caseName = element.name.text
+                let caseName = element.name.trimmed.text
                 
                 if let params = element.parameterClause?.parameters, !params.isEmpty {
                     let names: [String] = params.enumerated().map { idx, p in
-                        p.secondName?.text ?? p.firstName?.text ?? "value\(idx)"
+                        p.secondName?.trimmed.text ?? p.firstName?.trimmed.text ?? "value\(idx)"
                     }
                     
                     let lhsBinds = names.map { "let lhs\($0)" }.joined(separator: ", ")
@@ -203,9 +204,8 @@ public struct EquatableMacro: MemberMacro {
                         if type.hasPrefix("Binding<") {
                             return "lhs\(name).wrappedValue == rhs\(name).wrappedValue"
                         } else if type.contains("->") {
-                            return "false" // Functions can't be compared
+                            return "false"
                         } else {
-                            // For all other types including nested enums, just use ==
                             return "lhs\(name) == rhs\(name)"
                         }
                     }.joined(separator: " && ")
@@ -234,7 +234,7 @@ public struct EquatableMacro: MemberMacro {
         }
     }
 
-    private static func makeEquatable(
+    private static func makeEquatable(  // Note the lowercase 'a' here
         for typeName: String,
         members: MemberBlockItemListSyntax,
         isClass: Bool
